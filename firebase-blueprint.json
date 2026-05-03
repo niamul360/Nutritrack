@@ -1,0 +1,26 @@
+{
+  "entities": {
+    "FoodEntry": {
+      "title": "Food Entry",
+      "description": "A single food item logged by a user",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "foodName": { "type": "string" },
+        "calories": { "type": "number" },
+        "protein": { "type": "number" },
+        "carbs": { "type": "number" },
+        "fats": { "type": "number" },
+        "date": { "type": "string", "format": "date" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "foodName", "calories", "protein", "carbs", "fats", "date", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/foodEntries/{entryId}": {
+      "schema": "FoodEntry",
+      "description": "Collection of all food logs"
+    }
+  }
+}

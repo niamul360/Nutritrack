@@ -1,0 +1,53 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidFoodEntry(data) {
+      return data.keys().hasAll(['userId', 'foodName', 'calories', 'protein', 'carbs', 'fats', 'date', 'timestamp'])
+        && data.keys().size() == 8
+        && data.userId is string
+        && data.foodName is string && data.foodName.size() <= 200
+        && data.calories is number && data.calories >= 0
+        && data.protein is number && data.protein >= 0
+        && data.carbs is number && data.carbs >= 0
+        && data.fats is number && data.fats >= 0
+        && data.date is string && data.date.size() == 10
+        && data.timestamp == request.time;
+    }
+
+    match /foodEntries/{entryId} {
+      allow create: if isSignedIn() 
+        && incoming().userId == request.auth.uid
+        && isValidFoodEntry(incoming());
+      
+      allow update: if isSignedIn()
+        && existing().userId == request.auth.uid
+        && incoming().userId == existing().userId
+        && isValidFoodEntry(incoming());
+
+      allow delete: if isSignedIn()
+        && existing().userId == request.auth.uid;
+
+      allow get: if isSignedIn()
+        && resource.data.userId == request.auth.uid;
+
+      allow list: if isSignedIn()
+        && resource.data.userId == request.auth.uid;
+    }
+  }
+}
