@@ -3,9 +3,13 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import admin from "firebase-admin";
+import { GoogleGenAI, Type } from "@google/genai";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Initialize Gemini
+const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 let adminApp: admin.app.App | null = null;
 
@@ -52,6 +56,43 @@ async function startServer() {
   // Health check/Status route
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", adminInitialized: !!adminApp });
+  });
+
+  // Nutrition API proxy to Gemini
+  app.post("/api/nutrition", async (req, res) => {
+    const { foodName } = req.body;
+    if (!foodName) {
+      return res.status(400).json({ error: "foodName is required" });
+    }
+
+    try {
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const prompt = `Estimate the nutritional content for "${foodName}" per standard serving.`;
+      
+      const result = await model.generateContent({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              calories: { type: Type.NUMBER },
+              protein: { type: Type.NUMBER },
+              carbs: { type: Type.NUMBER },
+              fats: { type: Type.NUMBER },
+              servingSize: { type: Type.STRING }
+            },
+            required: ["calories", "protein", "carbs", "fats"]
+          }
+        }
+      });
+
+      const text = result.response.text();
+      res.json(JSON.parse(text));
+    } catch (error) {
+      console.error("Gemini Error:", error);
+      res.status(500).json({ error: "Failed to get nutrition data" });
+    }
   });
 
   // Example Admin Route (protected or just for demo)
