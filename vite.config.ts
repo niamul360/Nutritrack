@@ -10,14 +10,20 @@ export default defineConfig(({mode}) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
+        'firebase-admin': path.resolve(__dirname, './src/lib/empty-stub.ts'),
+        'express': path.resolve(__dirname, './src/lib/empty-stub.ts'),
+        'node-fetch': path.resolve(__dirname, './src/lib/empty-stub.ts'),
+        'whatwg-fetch': path.resolve(__dirname, './src/lib/empty-stub.ts'),
+        'isomorphic-fetch': path.resolve(__dirname, './src/lib/empty-stub.ts'),
       },
     },
     optimizeDeps: {
-      exclude: ['firebase-admin', 'express'],
+      entries: ['./index.html', './src/**/*.{ts,tsx}'],
+      exclude: ['firebase-admin', 'express', '@google/genai'],
     },
     build: {
       rollupOptions: {
-        external: ['firebase-admin', 'express'],
+        external: ['firebase-admin', 'express', '@google/genai'],
       },
     },
     server: {

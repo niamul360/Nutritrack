@@ -20,6 +20,14 @@ export interface NutritionData {
 
 export interface UserSettings {
   calorieGoal: number;
+  displayName?: string;
+  photoURL?: string;
+  unitPreference?: 'metric' | 'imperial';
+  macroRatios?: {
+    protein: number; // percentage
+    carbs: number; // percentage
+    fats: number; // percentage
+  };
   updatedAt: any;
 }
 

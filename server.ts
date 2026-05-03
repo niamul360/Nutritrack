@@ -11,34 +11,29 @@ const __dirname = path.dirname(__filename);
 // Initialize Gemini
 const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
+// Initialize Firebase Admin
 let adminApp: admin.app.App | null = null;
 
-/**
- * Lazy initialization of Firebase Admin SDK.
- * This prevents the server from crashing if the service account is not provided.
- */
 function getFirebaseAdmin(): admin.app.App {
   if (!adminApp) {
     const serviceAccountVar = process.env.FIREBASE_SERVICE_ACCOUNT;
     
     if (!serviceAccountVar) {
-      throw new Error("FIREBASE_SERVICE_ACCOUNT environment variable is required for admin features. Please provide the service account JSON string.");
+      throw new Error("FIREBASE_SERVICE_ACCOUNT environment variable is required.");
     }
 
     try {
-      // Allow serviceAccountVar to be either a JSON string or a path to a file
       let serviceAccount;
       if (serviceAccountVar.startsWith('{')) {
         serviceAccount = JSON.parse(serviceAccountVar);
       } else {
-        // Fallback to treat as path (user's provided path if they uploaded it)
         serviceAccount = serviceAccountVar;
       }
 
       adminApp = admin.initializeApp({
         credential: admin.credential.cert(serviceAccount)
       });
-      console.log("Firebase Admin initialized successfully.");
+      console.log("Firebase Admin initialized.");
     } catch (error) {
       console.error("Failed to initialize Firebase Admin:", error);
       throw error;

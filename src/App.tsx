@@ -1,4 +1,4 @@
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, FormEvent, useRef, ChangeEvent } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth, loginWithGoogle, logout } from './lib/firebase';
 import { FoodEntry } from './types';
@@ -10,6 +10,7 @@ import {
   updateUserSettings
 } from './services/dbService';
 import { getNutritionForFood } from './services/nutritionService';
+import { getAiRecipeSuggestions, Recipe } from './services/aiRecipeService';
 import { formatDate, cn } from './lib/utils';
 import { 
   Search, 
@@ -33,7 +34,10 @@ import {
   Instagram,
   Twitter,
   Facebook,
-  Settings
+  Settings,
+  User as UserIcon,
+  Camera,
+  Scale
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -59,6 +63,13 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [calorieGoal, setCalorieGoal] = useState<number>(2500);
   const [tempCalorieGoal, setTempCalorieGoal] = useState<string>('2500');
+  const [profileDisplayName, setProfileDisplayName] = useState<string>('');
+  const [profilePhotoURL, setProfilePhotoURL] = useState<string>('');
+  const [unitPreference, setUnitPreference] = useState<'metric' | 'imperial'>('metric');
+  const [macroRatios, setMacroRatios] = useState({ protein: 30, carbs: 40, fats: 30 });
+  const [aiRecipes, setAiRecipes] = useState<Recipe[]>([]);
+  const [isGeneratingRecipes, setIsGeneratingRecipes] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -87,25 +98,60 @@ export default function App() {
   useEffect(() => {
     if (user) {
       const unsubscribe = subscribeToUserSettings((settings) => {
-        if (settings?.calorieGoal) {
-          setCalorieGoal(settings.calorieGoal);
-          setTempCalorieGoal(settings.calorieGoal.toString());
+        if (settings) {
+          if (settings.calorieGoal) {
+            setCalorieGoal(settings.calorieGoal);
+            setTempCalorieGoal(settings.calorieGoal.toString());
+          }
+          if (settings.displayName) setProfileDisplayName(settings.displayName);
+          if (settings.photoURL) setProfilePhotoURL(settings.photoURL);
+          if (settings.unitPreference) setUnitPreference(settings.unitPreference);
+          if (settings.macroRatios) setMacroRatios(settings.macroRatios);
         }
       });
       return unsubscribe;
     }
   }, [user]);
 
-  const handleUpdateGoal = async (e: FormEvent) => {
+  const handleUpdateSettings = async (e: FormEvent) => {
     e.preventDefault();
     const newGoal = parseInt(tempCalorieGoal);
     if (isNaN(newGoal) || newGoal < 500 || newGoal > 10000) return;
     
     try {
-      await updateUserSettings({ calorieGoal: newGoal });
+      await updateUserSettings({ 
+        calorieGoal: newGoal,
+        displayName: profileDisplayName,
+        photoURL: profilePhotoURL,
+        unitPreference: unitPreference,
+        macroRatios: macroRatios
+      });
       setIsSettingsOpen(false);
     } catch (error) {
-      console.error("Failed to update goal:", error);
+      console.error("Failed to update settings:", error);
+    }
+  };
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setProfilePhotoURL(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleGenerateRecipes = async () => {
+    setIsGeneratingRecipes(true);
+    try {
+      const recipes = await getAiRecipeSuggestions(calorieGoal, macroRatios);
+      setAiRecipes(recipes);
+    } catch (error) {
+      console.error("Failed to generate recipes:", error);
+    } finally {
+      setIsGeneratingRecipes(false);
     }
   };
 
@@ -560,12 +606,27 @@ export default function App() {
             <Settings className="w-6 h-6" />
           </button>
         </div>
-        <button 
-          onClick={() => logout()}
-          className="w-14 h-14 rounded-3xl text-slate-400 flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-all"
-        >
-          <LogOut className="w-6 h-6" />
-        </button>
+        
+        <div className="flex flex-col items-center gap-6">
+          <button 
+            onClick={() => setIsSettingsOpen(true)}
+            className="w-12 h-12 rounded-full overflow-hidden border-2 border-slate-200 hover:border-emerald-500 transition-all shadow-sm"
+          >
+            {profilePhotoURL || user.photoURL ? (
+              <img src={profilePhotoURL || user.photoURL!} alt="Profile" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full bg-slate-100 flex items-center justify-center text-slate-400">
+                <UserIcon className="w-6 h-6" />
+              </div>
+            )}
+          </button>
+          <button 
+            onClick={() => logout()}
+            className="w-14 h-14 rounded-3xl text-slate-400 flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-all"
+          >
+            <LogOut className="w-6 h-6" />
+          </button>
+        </div>
       </nav>
 
       {/* Settings Modal */}
@@ -575,14 +636,14 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-sm overflow-y-auto"
             onClick={() => setIsSettingsOpen(false)}
           >
             <motion.div 
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl relative"
+              className="bg-white rounded-[2.5rem] p-10 w-full max-w-xl shadow-2xl relative my-auto"
               onClick={(e) => e.stopPropagation()}
             >
               <button 
@@ -595,31 +656,163 @@ export default function App() {
               <div className="space-y-8">
                 <div className="space-y-2">
                   <div className="w-12 h-12 bg-emerald-100 rounded-2xl flex items-center justify-center text-emerald-600">
-                    <Target className="w-6 h-6" />
+                    <UserIcon className="w-6 h-6" />
                   </div>
-                  <h3 className="text-3xl font-display font-bold text-slate-900">User Settings</h3>
-                  <p className="text-slate-500 font-medium">Personalize your nutrition goals.</p>
+                  <h3 className="text-3xl font-display font-bold text-slate-900">Profile Settings</h3>
+                  <p className="text-slate-500 font-medium">Customize your profile and preferences.</p>
                 </div>
 
-                <form onSubmit={handleUpdateGoal} className="space-y-6">
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Daily Calorie Goal</label>
-                    <input 
-                      type="number"
-                      min="500"
-                      max="10000"
-                      value={tempCalorieGoal}
-                      onChange={(e) => setTempCalorieGoal(e.target.value)}
-                      className="w-full bg-slate-50 border-2 border-transparent rounded-2xl py-4 px-6 focus:bg-white focus:border-emerald-500/20 transition-all font-bold text-xl text-slate-900"
-                    />
-                    <p className="text-[10px] text-slate-400 font-medium">Recommended: 1,500 - 3,500 Kcal based on activity.</p>
+                <form onSubmit={handleUpdateSettings} className="space-y-8">
+                  {/* Profile Picture */}
+                  <div className="flex flex-col items-center space-y-4">
+                    <div className="relative group">
+                      <div className="w-32 h-32 rounded-full overflow-hidden bg-slate-100 border-4 border-white shadow-lg">
+                        {profilePhotoURL ? (
+                          <img src={profilePhotoURL} alt="Profile" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-slate-300">
+                            <UserIcon className="w-16 h-16" />
+                          </div>
+                        )}
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="absolute bottom-0 right-0 p-2.5 bg-emerald-500 text-white rounded-full shadow-lg hover:bg-emerald-600 transition-all transform group-hover:scale-110"
+                      >
+                        <Camera className="w-5 h-5" />
+                      </button>
+                      <input 
+                        type="file" 
+                        ref={fileInputRef}
+                        className="hidden" 
+                        accept="image/*"
+                        onChange={handleFileChange}
+                      />
+                    </div>
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Click to change avatar</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Display Name</label>
+                      <input 
+                        type="text"
+                        value={profileDisplayName || user?.displayName || ''}
+                        onChange={(e) => setProfileDisplayName(e.target.value)}
+                        placeholder="Your Name"
+                        className="w-full bg-slate-50 border-2 border-transparent rounded-2xl py-4 px-6 focus:bg-white focus:border-emerald-500/20 transition-all font-bold text-lg text-slate-900"
+                      />
+                    </div>
+
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Daily Calorie Goal</label>
+                      <div className="relative">
+                        <input 
+                          type="number"
+                          min="500"
+                          max="10000"
+                          value={tempCalorieGoal}
+                          onChange={(e) => setTempCalorieGoal(e.target.value)}
+                          className="w-full bg-slate-50 border-2 border-transparent rounded-2xl py-4 px-6 focus:bg-white focus:border-emerald-500/20 transition-all font-bold text-lg text-slate-900"
+                        />
+                        <Target className="absolute right-6 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 flex items-center gap-2">
+                       <PieChart className="w-3 h-3" /> Preferred Macro Ratio
+                    </label>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6 bg-slate-50 rounded-[2rem]">
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-end">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-blue-500">Protein</span>
+                          <span className="font-bold text-slate-900">{macroRatios.protein}%</span>
+                        </div>
+                        <input 
+                          type="range"
+                          min="10"
+                          max="60"
+                          step="5"
+                          value={macroRatios.protein}
+                          onChange={(e) => setMacroRatios(prev => ({ ...prev, protein: parseInt(e.target.value) }))}
+                          className="w-full accent-blue-500"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-end">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-emerald-500">Carbs</span>
+                          <span className="font-bold text-slate-900">{macroRatios.carbs}%</span>
+                        </div>
+                        <input 
+                          type="range"
+                          min="10"
+                          max="70"
+                          step="5"
+                          value={macroRatios.carbs}
+                          onChange={(e) => setMacroRatios(prev => ({ ...prev, carbs: parseInt(e.target.value) }))}
+                          className="w-full accent-emerald-500"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-end">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-amber-500">Fats</span>
+                          <span className="font-bold text-slate-900">{macroRatios.fats}%</span>
+                        </div>
+                        <input 
+                          type="range"
+                          min="10"
+                          max="50"
+                          step="5"
+                          value={macroRatios.fats}
+                          onChange={(e) => setMacroRatios(prev => ({ ...prev, fats: parseInt(e.target.value) }))}
+                          className="w-full accent-amber-500"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-medium px-4">
+                      Total: {macroRatios.protein + macroRatios.carbs + macroRatios.fats}% 
+                      {macroRatios.protein + macroRatios.carbs + macroRatios.fats !== 100 && 
+                        <span className="text-amber-500 ml-2">(Ideally should be 100%)</span>
+                      }
+                    </p>
+                  </div>
+
+                  <div className="space-y-4">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 flex items-center gap-2">
+                       <Scale className="w-3 h-3" /> Units of Measurement
+                    </label>
+                    <div className="grid grid-cols-2 gap-4 p-2 bg-slate-50 rounded-3xl">
+                      <button 
+                        type="button"
+                        onClick={() => setUnitPreference('metric')}
+                        className={cn(
+                          "py-3 rounded-2xl font-bold transition-all text-sm",
+                          unitPreference === 'metric' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
+                        )}
+                      >
+                        Metric (kg, cm)
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => setUnitPreference('imperial')}
+                        className={cn(
+                          "py-3 rounded-2xl font-bold transition-all text-sm",
+                          unitPreference === 'imperial' ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
+                        )}
+                      >
+                        Imperial (lb, ft)
+                      </button>
+                    </div>
                   </div>
 
                   <button 
                     type="submit"
-                    className="w-full bg-slate-900 text-white py-5 rounded-2xl font-bold hover:bg-emerald-600 transition-all shadow-xl shadow-slate-900/20 active:scale-95"
+                    className="w-full bg-slate-900 text-white py-5 rounded-3xl font-bold hover:bg-emerald-600 transition-all shadow-xl shadow-slate-900/20 active:scale-95"
                   >
-                    Save Changes
+                    Save Profile Changes
                   </button>
                 </form>
               </div>
@@ -635,7 +828,7 @@ export default function App() {
           <div className="space-y-2">
             <span className="text-emerald-600 font-bold uppercase tracking-widest text-xs">Overview</span>
             <h1 className="text-4xl md:text-5xl font-display font-bold text-slate-900 tracking-tighter">
-              Morning, {user.displayName?.split(' ')[0]}.
+              Morning, {profileDisplayName ? profileDisplayName.split(' ')[0] : user.displayName?.split(' ')[0]}.
             </h1>
             <p className="text-slate-500 font-medium italic text-lg opacity-60 font-serif">
               "Let food be thy medicine and medicine be thy food."
@@ -907,6 +1100,97 @@ export default function App() {
             </div>
           </section>
         </div>
+
+        {/* AI Recipe Suggestions Section */}
+        <section className="space-y-10 pt-12 pb-24">
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+            <div className="space-y-3">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-700 text-[10px] font-black uppercase tracking-widest">
+                <Zap className="w-3 h-3 fill-current" /> AI Discovery
+              </div>
+              <h2 className="text-4xl font-display font-bold text-slate-900 tracking-tight">Personalized Suggestions.</h2>
+              <p className="text-slate-500 font-medium max-w-xl">
+                Generated based on your calorie goal of <span className="font-bold text-slate-900">{calorieGoal} Kcal</span> and macro ratios of <span className="text-blue-500 font-bold">{macroRatios.protein}% P</span>, <span className="text-emerald-500 font-bold">{macroRatios.carbs}% C</span>, <span className="text-amber-500 font-bold">{macroRatios.fats}% F</span>.
+              </p>
+            </div>
+            <button 
+              onClick={handleGenerateRecipes}
+              disabled={isGeneratingRecipes}
+              className="bg-slate-900 text-white px-8 py-4 rounded-[1.5rem] font-bold flex items-center gap-2 hover:bg-emerald-600 transition-all disabled:opacity-50 shadow-xl shadow-slate-900/10"
+            >
+              {isGeneratingRecipes ? <Loader2 className="w-5 h-5 animate-spin" /> : <Zap className="w-5 h-5" />}
+              {aiRecipes.length > 0 ? "Refresh Suggestions" : "Generate Recipes"}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {aiRecipes.length > 0 ? (
+              aiRecipes.map((recipe, i) => (
+                <motion.div 
+                  key={i}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.1 }}
+                  className="bg-white rounded-[2.5rem] p-8 shadow-xl shadow-slate-200/50 border border-slate-100 flex flex-col justify-between group hover:border-emerald-500/20 transition-all"
+                >
+                  <div className="space-y-6">
+                    <div className="flex justify-between items-start">
+                      <div className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-black uppercase tracking-widest">
+                        {recipe.difficulty}
+                      </div>
+                      <span className="text-xs font-bold text-slate-400">{recipe.prepTime}</span>
+                    </div>
+                    <div className="space-y-2">
+                      <h4 className="text-2xl font-display font-bold text-slate-900 leading-tight group-hover:text-emerald-600 transition-colors uppercase tracking-tighter">{recipe.name}</h4>
+                      <p className="text-slate-500 text-sm font-medium line-clamp-3 italic leading-relaxed">"{recipe.description}"</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-3 gap-4 py-4 border-y border-slate-50">
+                      <div className="text-center">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-blue-500 mb-1">Pro</p>
+                        <p className="font-bold text-slate-900">{recipe.macros.protein}g</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-1">Carb</p>
+                        <p className="font-bold text-slate-900">{recipe.macros.carbs}g</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-amber-500 mb-1">Fat</p>
+                        <p className="font-bold text-slate-900">{recipe.macros.fats}g</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ingredients</h5>
+                      <ul className="space-y-1">
+                        {recipe.ingredients.slice(0, 3).map((ing, idx) => (
+                          <li key={idx} className="text-xs font-medium text-slate-600 flex items-center gap-2">
+                            <div className="w-1 h-1 rounded-full bg-emerald-500" /> {ing}
+                          </li>
+                        ))}
+                        {recipe.ingredients.length > 3 && <li className="text-[10px] text-slate-400 font-bold">+ {recipe.ingredients.length - 3} more</li>}
+                      </ul>
+                    </div>
+                  </div>
+
+                  <button className="w-full mt-8 py-4 rounded-2xl bg-slate-50 text-slate-900 font-bold text-sm hover:bg-emerald-500 hover:text-white transition-all flex items-center justify-center gap-2">
+                    View Recipe Details <ChevronRight className="w-4 h-4" />
+                  </button>
+                </motion.div>
+              ))
+            ) : (
+              <div className="col-span-full py-20 flex flex-col items-center justify-center text-center space-y-4 bg-white/50 rounded-[3rem] border-2 border-dashed border-slate-200">
+                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center text-slate-300">
+                  <Zap className="w-8 h-8" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="text-xl font-bold text-slate-900">No suggestions yet.</h4>
+                  <p className="text-slate-500 font-medium">Click generate to discover AI-powered meals tailored to your goals.</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
       </main>
     </div>
   );

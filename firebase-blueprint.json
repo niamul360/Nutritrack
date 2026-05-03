@@ -22,6 +22,18 @@
       "type": "object",
       "properties": {
         "calorieGoal": { "type": "number" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "unitPreference": { "type": "string", "enum": ["metric", "imperial"] },
+        "macroRatios": {
+          "type": "object",
+          "properties": {
+            "protein": { "type": "number", "description": "Percentage of calories from protein" },
+            "carbs": { "type": "number", "description": "Percentage of calories from carbohydrates" },
+            "fats": { "type": "number", "description": "Percentage of calories from fats" }
+          },
+          "required": ["protein", "carbs", "fats"]
+        },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["calorieGoal", "updatedAt"]
