@@ -15,12 +15,26 @@
         "timestamp": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "foodName", "calories", "protein", "carbs", "fats", "date", "timestamp"]
+    },
+    "UserSettings": {
+      "title": "User Settings",
+      "description": "Customizable settings for a user profile",
+      "type": "object",
+      "properties": {
+        "calorieGoal": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["calorieGoal", "updatedAt"]
     }
   },
   "firestore": {
     "/foodEntries/{entryId}": {
       "schema": "FoodEntry",
       "description": "Collection of all food logs"
+    },
+    "/users/{userId}": {
+      "schema": "UserSettings",
+      "description": "User specific profile and settings"
     }
   }
 }

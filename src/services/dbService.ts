@@ -7,11 +7,13 @@ import {
   deleteDoc, 
   doc, 
   serverTimestamp, 
+  setDoc,
+  getDoc,
   onSnapshot,
   orderBy
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
-import { FoodEntry, OperationType, FirestoreErrorInfo } from '../types';
+import { FoodEntry, OperationType, FirestoreErrorInfo, UserSettings } from '../types';
 
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errInfo: FirestoreErrorInfo = {
@@ -32,6 +34,53 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
+}
+
+export async function getUserSettings() {
+  const userId = auth.currentUser?.uid;
+  if (!userId) return null;
+
+  const path = `users/${userId}`;
+  try {
+    const docSnap = await getDoc(doc(db, 'users', userId));
+    if (docSnap.exists()) {
+      return docSnap.data() as UserSettings;
+    }
+    return null;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+  }
+}
+
+export async function updateUserSettings(settings: Partial<UserSettings>) {
+  const userId = auth.currentUser?.uid;
+  if (!userId) throw new Error("User not authenticated");
+
+  const path = `users/${userId}`;
+  try {
+    await setDoc(doc(db, 'users', userId), {
+      ...settings,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export function subscribeToUserSettings(callback: (settings: UserSettings | null) => void) {
+  const userId = auth.currentUser?.uid;
+  if (!userId) return () => {};
+
+  const path = `users/${userId}`;
+  return onSnapshot(doc(db, 'users', userId), (snapshot) => {
+    if (snapshot.exists()) {
+      callback(snapshot.data() as UserSettings);
+    } else {
+      callback(null);
+    }
+  }, (error) => {
+    handleFirestoreError(error, OperationType.GET, path);
+  });
 }
 
 export async function addFoodEntry(entry: Omit<FoodEntry, 'id' | 'userId' | 'timestamp'>) {

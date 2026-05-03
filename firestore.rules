@@ -30,6 +30,13 @@ service cloud.firestore {
         && data.timestamp == request.time;
     }
 
+    function isValidUserSettings(data) {
+      return data.keys().hasAll(['calorieGoal', 'updatedAt'])
+        && data.keys().size() == 2
+        && data.calorieGoal is number && data.calorieGoal >= 500 && data.calorieGoal <= 10000
+        && data.updatedAt == request.time;
+    }
+
     match /foodEntries/{entryId} {
       allow create: if isSignedIn() 
         && incoming().userId == request.auth.uid
@@ -48,6 +55,11 @@ service cloud.firestore {
 
       allow list: if isSignedIn()
         && resource.data.userId == request.auth.uid;
+    }
+
+    match /users/{userId} {
+      allow get, list: if isSignedIn() && userId == request.auth.uid;
+      allow create, update: if isSignedIn() && userId == request.auth.uid && isValidUserSettings(incoming());
     }
   }
 }

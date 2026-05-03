@@ -8,8 +8,26 @@ export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
-export const loginWithGoogle = () => signInWithPopup(auth, googleProvider);
-export const logout = () => auth.signOut();
+export const loginWithGoogle = async () => {
+  console.log("Attempting Google Login...");
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    console.log("Login success:", result.user.email);
+    return result;
+  } catch (error) {
+    console.error("Login error in firebase.ts:", error);
+    throw error;
+  }
+};
+export const logout = async () => {
+  console.log("Logging out...");
+  try {
+    await auth.signOut();
+    console.log("Logged out successfully");
+  } catch (error) {
+    console.error("Logout error:", error);
+  }
+};
 
 async function testConnection() {
   try {

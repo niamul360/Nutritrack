@@ -13,11 +13,11 @@ export default defineConfig(({mode}) => {
       },
     },
     optimizeDeps: {
-      exclude: ['firebase-admin', '@google/genai', 'express'],
+      exclude: ['firebase-admin', 'express'],
     },
     build: {
       rollupOptions: {
-        external: ['firebase-admin', '@google/genai', 'express'],
+        external: ['firebase-admin', 'express'],
       },
     },
     server: {

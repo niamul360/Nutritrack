@@ -66,12 +66,12 @@ async function startServer() {
     }
 
     try {
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       const prompt = `Estimate the nutritional content for "${foodName}" per standard serving.`;
       
-      const result = await model.generateContent({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: {
+      const response = await genAI.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+        config: {
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -87,7 +87,8 @@ async function startServer() {
         }
       });
 
-      const text = result.response.text();
+      const text = response.text;
+      if (!text) throw new Error("No text returned from Gemini");
       res.json(JSON.parse(text));
     } catch (error) {
       console.error("Gemini Error:", error);

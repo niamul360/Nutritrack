@@ -18,6 +18,11 @@ export interface NutritionData {
   servingSize?: string;
 }
 
+export interface UserSettings {
+  calorieGoal: number;
+  updatedAt: any;
+}
+
 export enum OperationType {
   CREATE = 'create',
   UPDATE = 'update',

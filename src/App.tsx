@@ -2,7 +2,13 @@ import { useState, useEffect, FormEvent } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth, loginWithGoogle, logout } from './lib/firebase';
 import { FoodEntry } from './types';
-import { subscribeToDailyLogs, addFoodEntry, deleteFoodEntry } from './services/dbService';
+import { 
+  subscribeToDailyLogs, 
+  addFoodEntry, 
+  deleteFoodEntry,
+  subscribeToUserSettings,
+  updateUserSettings
+} from './services/dbService';
 import { getNutritionForFood } from './services/nutritionService';
 import { formatDate, cn } from './lib/utils';
 import { 
@@ -26,7 +32,8 @@ import {
   X,
   Instagram,
   Twitter,
-  Facebook
+  Facebook,
+  Settings
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -49,14 +56,73 @@ export default function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<any>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [calorieGoal, setCalorieGoal] = useState<number>(2500);
+  const [tempCalorieGoal, setTempCalorieGoal] = useState<string>('2500');
+
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   useEffect(() => {
+    console.log("Auth initialized, current user:", auth.currentUser?.email);
     const unsubscribe = onAuthStateChanged(auth, (u) => {
+      console.log("Auth state changed:", u?.email);
       setUser(u);
       setLoading(false);
     });
-    return unsubscribe;
+    // Safety timeout to prevent infinite loading if Firebase hangs
+    const timer = setTimeout(() => {
+      setLoading(prev => {
+        if (prev) console.warn("Auth state took too long, forcing loading off.");
+        return false;
+      });
+    }, 5000);
+    
+    return () => {
+      unsubscribe();
+      clearTimeout(timer);
+    };
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      const unsubscribe = subscribeToUserSettings((settings) => {
+        if (settings?.calorieGoal) {
+          setCalorieGoal(settings.calorieGoal);
+          setTempCalorieGoal(settings.calorieGoal.toString());
+        }
+      });
+      return unsubscribe;
+    }
+  }, [user]);
+
+  const handleUpdateGoal = async (e: FormEvent) => {
+    e.preventDefault();
+    const newGoal = parseInt(tempCalorieGoal);
+    if (isNaN(newGoal) || newGoal < 500 || newGoal > 10000) return;
+    
+    try {
+      await updateUserSettings({ calorieGoal: newGoal });
+      setIsSettingsOpen(false);
+    } catch (error) {
+      console.error("Failed to update goal:", error);
+    }
+  };
+
+  const handleLogin = async () => {
+    if (isLoggingIn) return;
+    setIsLoggingIn(true);
+    console.log("handleLogin triggered");
+    try {
+      setLoginError(null);
+      await loginWithGoogle();
+    } catch (error: any) {
+      console.error("Login component error:", error);
+      setLoginError(error.message || "Failed to sign in. Please try again.");
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
 
   useEffect(() => {
     if (user) {
@@ -135,17 +201,46 @@ export default function App() {
               <a href="#features" className="text-sm font-semibold text-slate-500 hover:text-emerald-600 transition-colors">Features</a>
               <a href="#about" className="text-sm font-semibold text-slate-500 hover:text-emerald-600 transition-colors">About</a>
               <a href="#blogs" className="text-sm font-semibold text-slate-500 hover:text-emerald-600 transition-colors">Blogs</a>
-              <button 
-                onClick={() => loginWithGoogle()}
-                className="bg-slate-900 text-white px-6 py-2.5 rounded-full text-sm font-bold hover:bg-slate-800 transition-all active:scale-95"
-              >
-                Get Started
-              </button>
+              <div className="flex flex-col items-end">
+                <button 
+                  onClick={handleLogin}
+                  disabled={isLoggingIn}
+                  className="bg-slate-900 text-white px-6 py-2.5 rounded-full text-sm font-bold hover:bg-slate-800 transition-all active:scale-95 disabled:opacity-50"
+                >
+                  {isLoggingIn ? "Signing in..." : "Get Started"}
+                </button>
+                {loginError && <span className="text-[10px] text-red-500 mt-1">{loginError}</span>}
+              </div>
             </div>
-            <button className="md:hidden" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
-              <Menu className="w-6 h-6" />
+            <button className="md:hidden p-2 rounded-lg bg-slate-50" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
+              {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
           </div>
+
+          {/* Mobile Menu Overlay */}
+          <AnimatePresence>
+            {isMobileMenuOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="absolute top-20 left-0 w-full bg-white border-b border-slate-100 p-6 md:hidden z-40 shadow-xl"
+              >
+                <div className="flex flex-col gap-6">
+                  <a href="#features" onClick={() => setIsMobileMenuOpen(false)} className="text-lg font-bold text-slate-900 border-b border-slate-50 pb-2">Features</a>
+                  <a href="#about" onClick={() => setIsMobileMenuOpen(false)} className="text-lg font-bold text-slate-900 border-b border-slate-50 pb-2">About</a>
+                  <a href="#blogs" onClick={() => setIsMobileMenuOpen(false)} className="text-lg font-bold text-slate-900 border-b border-slate-50 pb-2">Blogs</a>
+                  <button 
+                    onClick={handleLogin}
+                    disabled={isLoggingIn}
+                    className="w-full bg-slate-900 text-white py-4 rounded-2xl text-lg font-bold hover:bg-slate-800 active:scale-95 disabled:opacity-50"
+                  >
+                    {isLoggingIn ? "Signing in..." : "Get Started Now"}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </nav>
 
         {/* Hero Section */}
@@ -169,12 +264,16 @@ export default function App() {
                   The most advanced AI nutrition tracker. Instantly analyze meals, track macros, and reach your goals with Gemini AI.
                 </p>
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-6 pt-4">
-                  <button 
-                    onClick={() => loginWithGoogle()}
-                    className="w-full sm:w-auto bg-slate-900 text-white px-12 py-5 rounded-[2rem] text-lg font-bold hover:bg-emerald-600 transition-all shadow-2xl shadow-slate-900/20 active:scale-95 flex items-center justify-center gap-3"
-                  >
-                    Start Tracking Free <ArrowRight className="w-5 h-5" />
-                  </button>
+                  <div className="flex flex-col items-center w-full sm:w-auto">
+                    <button 
+                      onClick={handleLogin}
+                      disabled={isLoggingIn}
+                      className="w-full sm:w-auto bg-slate-900 text-white px-12 py-5 rounded-[2rem] text-lg font-bold hover:bg-emerald-600 transition-all shadow-2xl shadow-slate-900/20 active:scale-95 flex items-center justify-center gap-3 disabled:opacity-50"
+                    >
+                      {isLoggingIn ? <Loader2 className="w-5 h-5 animate-spin" /> : "Start Tracking Free"} <ArrowRight className="w-5 h-5" />
+                    </button>
+                    {loginError && <span className="text-xs text-red-500 mt-3 font-bold">{loginError}</span>}
+                  </div>
                   <div className="flex -space-x-3">
                     {[1,2,3,4].map(i => (
                       <img key={i} src={`https://i.pravatar.cc/100?img=${i+10}`} className="w-10 h-10 rounded-full border-4 border-white shadow-sm" alt="User" />
@@ -454,6 +553,12 @@ export default function App() {
           <button className="w-14 h-14 rounded-3xl text-slate-400 flex items-center justify-center hover:bg-white hover:text-slate-900 transition-all">
             <BarChart2 className="w-6 h-6" />
           </button>
+          <button 
+            onClick={() => setIsSettingsOpen(true)}
+            className="w-14 h-14 rounded-3xl text-slate-400 flex items-center justify-center hover:bg-white hover:text-slate-900 transition-all"
+          >
+            <Settings className="w-6 h-6" />
+          </button>
         </div>
         <button 
           onClick={() => logout()}
@@ -462,6 +567,66 @@ export default function App() {
           <LogOut className="w-6 h-6" />
         </button>
       </nav>
+
+      {/* Settings Modal */}
+      <AnimatePresence>
+        {isSettingsOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-sm"
+            onClick={() => setIsSettingsOpen(false)}
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl relative"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button 
+                onClick={() => setIsSettingsOpen(false)}
+                className="absolute right-6 top-6 p-2 text-slate-300 hover:text-slate-900 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+
+              <div className="space-y-8">
+                <div className="space-y-2">
+                  <div className="w-12 h-12 bg-emerald-100 rounded-2xl flex items-center justify-center text-emerald-600">
+                    <Target className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-3xl font-display font-bold text-slate-900">User Settings</h3>
+                  <p className="text-slate-500 font-medium">Personalize your nutrition goals.</p>
+                </div>
+
+                <form onSubmit={handleUpdateGoal} className="space-y-6">
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Daily Calorie Goal</label>
+                    <input 
+                      type="number"
+                      min="500"
+                      max="10000"
+                      value={tempCalorieGoal}
+                      onChange={(e) => setTempCalorieGoal(e.target.value)}
+                      className="w-full bg-slate-50 border-2 border-transparent rounded-2xl py-4 px-6 focus:bg-white focus:border-emerald-500/20 transition-all font-bold text-xl text-slate-900"
+                    />
+                    <p className="text-[10px] text-slate-400 font-medium">Recommended: 1,500 - 3,500 Kcal based on activity.</p>
+                  </div>
+
+                  <button 
+                    type="submit"
+                    className="w-full bg-slate-900 text-white py-5 rounded-2xl font-bold hover:bg-emerald-600 transition-all shadow-xl shadow-slate-900/20 active:scale-95"
+                  >
+                    Save Changes
+                  </button>
+                </form>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Main Experience */}
       <main className="flex-1 ml-24 p-8 md:p-12 space-y-12 max-w-[1400px]">
@@ -571,7 +736,15 @@ export default function App() {
           {/* Calorie Stats Card - Secondary Bento */}
           <section className="lg:col-span-4 bento-card bg-emerald-500 text-white flex flex-col justify-between overflow-hidden relative border-none">
             <div className="relative z-10 space-y-6">
-              <span className="text-white/60 font-black uppercase text-[10px] tracking-[0.3em] block">Energy Balance</span>
+              <div className="flex items-center justify-between">
+                <span className="text-white/60 font-black uppercase text-[10px] tracking-[0.3em] block">Energy Balance</span>
+                <button 
+                  onClick={() => setIsSettingsOpen(true)}
+                  className="p-2 bg-white/10 rounded-xl hover:bg-white/20 transition-all text-white/60 hover:text-white"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+              </div>
               <div className="flex items-center gap-4">
                 <div className="relative flex items-center justify-center">
                   <svg className="w-40 h-40 transform -rotate-90">
@@ -583,7 +756,7 @@ export default function App() {
                       fill="none" 
                       strokeDasharray="440"
                       initial={{ strokeDashoffset: 440 }}
-                      animate={{ strokeDashoffset: 440 - (Math.min(totalCalories, 2500) / 2500) * 440 }}
+                      animate={{ strokeDashoffset: 440 - (Math.min(totalCalories, calorieGoal) / calorieGoal) * 440 }}
                       strokeLinecap="round"
                     />
                   </svg>
@@ -595,11 +768,11 @@ export default function App() {
                 <div className="space-y-4">
                   <div>
                     <span className="block text-xs uppercase font-black tracking-widest text-white/60">Target</span>
-                    <span className="text-2xl font-black uppercase">2,500</span>
+                    <span className="text-2xl font-black uppercase">{calorieGoal.toLocaleString()}</span>
                   </div>
                   <div>
                     <span className="block text-xs uppercase font-black tracking-widest text-white/60">Remaining</span>
-                    <span className="text-2xl font-black uppercase">{Math.max(2500 - totalCalories, 0)}</span>
+                    <span className="text-2xl font-black uppercase">{Math.max(calorieGoal - totalCalories, 0).toLocaleString()}</span>
                   </div>
                 </div>
               </div>
